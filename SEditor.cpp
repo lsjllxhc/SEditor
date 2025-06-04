@@ -319,6 +319,8 @@ void goto_search(EditorState &ed, int rows) {
     if (ed.last_search_time && ed.search_idx < (int)ed.search_results.size()) {
         int sy = ed.search_results[ed.search_idx].first;
         int sx = ed.search_results[ed.search_idx].second;
+        // 这里加调试输出
+        set_status(ed, "跳转到: 行=" + to_string(sy) + " 列=" + to_string(sx));
         ed.cy = sy;
         ed.cx = sx;
         int screen_rows = rows - 3;
@@ -383,24 +385,26 @@ void editor_loop(EditorState &ed) {
             continue;
         }
         else if (c == 6) { // ^F
-            string prompt_word = ed.search_word.empty() ? "Find" : "Find(" + ed.search_word + ")";
-            string word = prompt(ed, prompt_word + ":", ed.search_word);
-            if (word.empty() && !ed.search_word.empty()) {
-                if (!ed.search_results.empty()) {
-                    ed.search_idx = (ed.search_idx + 1) % ed.search_results.size();
-                    goto_search(ed, rows);
-                }
-            } else if (!word.empty()) {
-                do_search(ed, word);
-                if (!ed.search_results.empty()) {
-                    ed.search_idx = 0;
-                    goto_search(ed, rows);
-                } else {
-                    set_status(ed, "Not found");
-                }
-            }
-            continue;
+    string prompt_word = ed.search_word.empty() ? "Find" : "Find(" + ed.search_word + ")";
+    string word = prompt(ed, prompt_word + ":", ed.search_word);
+
+    // 如果输入内容和当前search_word一样，也跳到下一个
+    if ((word.empty() && !ed.search_word.empty()) || word == ed.search_word) {
+        if (!ed.search_results.empty()) {
+            ed.search_idx = (ed.search_idx + 1) % ed.search_results.size();
+            goto_search(ed, rows);
         }
+    } else if (!word.empty()) {
+        do_search(ed, word);
+        if (!ed.search_results.empty()) {
+            ed.search_idx = 0;
+            goto_search(ed, rows);
+        } else {
+            set_status(ed, "Not found");
+        }
+    }
+    continue;
+}
         else if (c == 24) { // ^X
     if (ed.dirty) {
         set_status(ed, "File modified. Save? (Enter=Yes, ^X=No, ^C=Cancel)");
