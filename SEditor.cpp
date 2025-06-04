@@ -157,7 +157,7 @@ void draw_rows(EditorState &ed, int rows, int cols) {
             if (color)
                 draw_code_row(ed.lines[filerow], y, ext, ed, filerow);
             else {
-                if (ed.search_results.empty()) {
+                if (!ed.search_results.empty() && ed.search_idx < (int)ed.search_results.size()) {
                     int sy = ed.search_results[ed.search_idx].first;
                     int sx = ed.search_results[ed.search_idx].second;
                     if (sy == filerow) {
