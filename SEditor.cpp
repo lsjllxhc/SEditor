@@ -422,11 +422,10 @@ void editor_loop(EditorState &ed) {
     }
 }
         else if (c == 15) { // ^O
-            string fname = prompt(ed, "File Name", ed.filename);
-            if (!fname.empty()) {
-                save_file(ed, fname);
-            }
-        }
+    if (!ed.filename.empty()) {
+        save_file(ed, ed.filename);
+    }
+}
         else if (c == KEY_UP || c == KEY_DOWN || c == KEY_LEFT || c == KEY_RIGHT) {
             editor_move_cursor(ed, c, rows, cols);
         }
