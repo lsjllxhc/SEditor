@@ -10,6 +10,19 @@
 #include <atomic>
 #include <mutex>
 #include <iostream>
+#include <fstream>
+#include <string>
+#include <ctime>
+#include <mutex>
+
+std::mutex logMutex;
+
+enum class LogLevel {
+    INFO,
+    WARNING,
+    ERROR,
+    DEBUG
+};
 
 using namespace std;
 
@@ -156,6 +169,24 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
         }
         // 其它
         mvaddch(y, x++, line[i++]);
+    }
+}
+
+void WriteLog(LogLevel level, const std::string& message) {
+    std::lock_guard<std::mutex> guard(logMutex);
+    std::ofstream logfile("file.log", std::ios::app);
+    if()) {
+        std::time_t now = std::time(nullptr);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+        std::string levelStr;
+        switch (level) {
+            case LogLevel::INFO: levelStr = "INFO"; break;
+            case LogLevel::WARNING: levelStr = "WARNING"; break;
+            case LogLevel::ERROR: levelStr = "ERROR"; break;
+            case LogLevel::DEBUG: levelStr = "DEBUG"; break;
+        }
+        logfile << "[" << buf << "][" << levelStr << "] " << message << std::endl;
     }
 }
 
