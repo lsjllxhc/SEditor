@@ -416,7 +416,7 @@ void editor_move_cursor(EditorState &ed, int key, int screen_rows, int screen_co
     int filecol = ed.cx;
 
     switch (key) {
-        case ARROW_LEFT:
+        case KEY_LEFT:
             if (filecol > 0) {
                 ed.cx--;
             } else if (filerow > 0) {
@@ -425,7 +425,7 @@ void editor_move_cursor(EditorState &ed, int key, int screen_rows, int screen_co
                 ed.cy--;
             }
             break;
-        case ARROW_RIGHT:
+        case KEY_RIGHT:
             if (filerow - ed.file_rowoff < (int)ed.cache_lines.size() &&
                 ed.cx < (int)ed.cache_lines[filerow - ed.file_rowoff].size()) {
                 ed.cx++;
@@ -435,13 +435,13 @@ void editor_move_cursor(EditorState &ed, int key, int screen_rows, int screen_co
                 ed.cy++;
             }
             break;
-        case ARROW_UP:
+        case KEY_UP:
             if (filerow > 0) {
                 filerow--;
                 ed.cy--;
             }
             break;
-        case ARROW_DOWN:
+        case KEY_DOWN:
             if (filerow + 1 < ed.total_lines) {
                 filerow++;
                 ed.cy++;
