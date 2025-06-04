@@ -399,26 +399,28 @@ void editor_loop(EditorState &ed) {
             continue;
         }
         else if (c == 24) { // ^X
-            if (ed.dirty) {
-                set_status(ed, "File modified. Save? (Enter=Yes, ^X=No, ^C=Cancel)");
-                draw_status(ed, rows, cols);
-                draw_msg(ed, rows, cols);
-                string fname = prompt(ed, "File Name", ed.filename);
-                    save_file(ed, fname);
-                    break;
-                } 
-            else if (c == 24) {
-                    break;
-                }
-            else if (c == 3) {
-                    set_status(ed, "Cancel");
-                    continue;
-                } 
-            else {
-                    set_status(ed, "Cancel");
-                    continue;
-                }
+    if (ed.dirty) {
+        set_status(ed, "File modified. Save? (Enter=Yes, ^X=No, ^C=Cancel)");
+        draw_status(ed, rows, cols);
+        draw_msg(ed, rows, cols);
+        int ch = getch();
+        if (ch == '\n' || ch == '\r') { // Enter保存
+            string fname = prompt(ed, "File Name", ed.filename);
+            save_file(ed, fname);
+            break;
+        } else if (ch == 24) { // ^X强制退出
+            break;
+        } else if (ch == 3) { // ^C取消
+            set_status(ed, "Cancel");
+            continue;
+        } else {
+            set_status(ed, "Cancel");
+            continue;
         }
+    } else {
+        break; // 没有修改直接退出
+    }
+}
         else if (c == 15) { // ^O
             string fname = prompt(ed, "File Name", ed.filename);
             if (!fname.empty()) {
