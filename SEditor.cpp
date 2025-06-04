@@ -32,8 +32,13 @@ const set<string> java_keywords = {
 };
 const set<string> json_keywords = {"true","false","null"};
 
+const int CACHE_SIZE = 500;  // 缓存窗口大小，可调整
+
 struct EditorState {
-    vector<string> lines;
+    vector<string> cache_lines;   // 缓存当前窗口附近的若干行
+int file_rowoff = 0;         // 当前缓存内容在文件中的起始行号
+int total_lines = 0;         // 文件总行数
+vector<bool> dirty_flags;    // 缓存区每行是否被修改
     string filename, statusmsg;
     int cx = 0, cy = 0;
     int rowoff = 0;
@@ -146,6 +151,27 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
     }
 }
 
+void ensure_cache(EditorState& ed, int target_row) {
+    if (target_row < ed.file_rowoff || target_row >= ed.file_rowoff + (int)ed.cache_lines.size()) {
+        // 需要重新加载缓存
+        ifstream fin(ed.filename);
+        string s;
+        int cur = 0;
+        int start = max(target_row - CACHE_SIZE/2, 0);
+        ed.cache_lines.clear();
+        ed.dirty_flags.clear();
+        while (getline(fin, s)) {
+            if (cur >= start && (int)ed.cache_lines.size() < CACHE_SIZE) {
+                ed.cache_lines.push_back(s);
+                ed.dirty_flags.push_back(false);
+            }
+            cur++;
+            if ((int)ed.cache_lines.size() >= CACHE_SIZE) break;
+        }
+        ed.file_rowoff = start;
+    }
+}
+
 void draw_rows(EditorState &ed, int rows, int cols) {
     string ext = get_ext(ed.filename);
     bool color = is_code_file(ed.filename);
@@ -153,23 +179,23 @@ void draw_rows(EditorState &ed, int rows, int cols) {
         int filerow = y + ed.rowoff;
         move(y, 0);
         clrtoeol();
-        if (filerow < (int)ed.lines.size()) {
+        if (filerow < (int)ed.cache_lines.size()) {
             if (color)
-                draw_code_row(ed.lines[filerow], y, ext, ed, filerow);
+                draw_code_row(ed.cache_lines[filerow], y, ext, ed, filerow);
             else {
                 if (!ed.search_results.empty() && ed.search_idx < (int)ed.search_results.size()) {
                     int sy = ed.search_results[ed.search_idx].first;
                     int sx = ed.search_results[ed.search_idx].second;
                     if (sy == filerow) {
-                        mvprintw(y, 0, "%.*s", sx, ed.lines[filerow].c_str());
+                        mvprintw(y, 0, "%.*s", sx, ed.cache_lines[filerow].c_str());
                         attron(COLOR_PAIR(5) | A_STANDOUT);
-                        printw("%.*s", (int)ed.search_word.size(), ed.lines[filerow].c_str() + sx);
+                        printw("%.*s", (int)ed.search_word.size(), ed.cache_lines[filerow].c_str() + sx);
                         attroff(COLOR_PAIR(5) | A_STANDOUT);
-                        printw("%s", ed.lines[filerow].c_str() + sx + ed.search_word.size());
+                        printw("%s", ed.cache_lines[filerow].c_str() + sx + ed.search_word.size());
                         continue;
                     }
                 }
-                mvprintw(y, 0, "%s", ed.lines[filerow].c_str());
+                mvprintw(y, 0, "%s", ed.cache_lines[filerow].c_str());
             }
         }
     }
@@ -202,19 +228,28 @@ void set_status(EditorState &ed, const string &msg) {
 
 void open_file(EditorState &ed, const string &fname) {
     ed.filename = fname;
-    ed.lines.clear();
+    ed.cache_lines.clear();
+    ed.dirty_flags.clear();
     ifstream fin(fname);
+    ed.file_rowoff = 0;
+    ed.total_lines = 0;
 
     if (!fin) {
-        ed.lines.push_back("");
+        ed.cache_lines.push_back("");
+        ed.dirty_flags.push_back(false);
         ed.newfile = true;
         set_status(ed, fname + " (new file) ");
+        ed.total_lines = 1;
     } else {
         string s;
-        while (getline(fin, s)) ed.lines.push_back(s);
-        if (ed.lines.empty()) ed.lines.push_back(""); // 文件为空也插入一行
+        int cnt = 0;
+        while (getline(fin, s)) {
+            if (cnt < CACHE_SIZE) {
+                ed.cache.push_back(false);
+        }
         ed.newfile = false;
         set_status(ed, fname);
+        ed.total_lines = cnt;
     }
 
     ed.dirty = false;
@@ -222,61 +257,121 @@ void open_file(EditorState &ed, const string &fname) {
 }
 
 void save_file(EditorState &ed, const string &fname) {
+    // 1. 先加载全文件内容
+    vector<string> all_lines;
+    ifstream fin(fname);
+    string s;
+    while (getline(fin, s)) all_lines.push_back(s);
+    fin.close();
+
+    // 2. 用缓存区内容覆盖对应片段
+    int start = ed.file_rowoff;
+    for (int i = 0; i < (int)ed.cache_lines.size(); ++i) {
+        if (start + i < (int)all_lines.size()) {
+            if (ed.dirty_flags[i])  // 只覆盖被编辑过的行
+                all_lines[start + i] = ed.cache_lines[i];
+        } else {
+            // 缓存区超出原文件长度，则追加
+            all_lines.push_back(ed.cache_lines[i]);
+        }
+    }
+
+    // 3. 写回文件
     ofstream fout(fname);
-    for (auto &l : ed.lines) fout << l << "\n";
+    for (const auto &line : all_lines) fout << line << "\n";
+    fout.close();
+
     ed.filename = fname;
     ed.newfile = false;
     ed.dirty = false;
-    set_status(ed, "Wrote " + to_string(ed.lines.size()) + " lines");
+    ed.dirty_flags.assign(ed.cache_lines.size(), false); // 保存后清除脏标记
+    set_status(ed, "Wrote " + to_string(all_lines.size()) + " lines");
 }
 
 void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
-    int line_len = ed.lines[ed.cy].size();
+    int screen_rows = rows - 3;
+
+    // 计算实际文件行号
+    int actual_row = ed.file_rowoff + ed.cy;
+
     switch (key) {
-        case KEY_UP:
-            if (ed.cy > 0) ed.cy--;
-            break;
-        case KEY_DOWN:
-            if (ed.cy < (int)ed.lines.size()-1) ed.cy++;
-            break;
-        case KEY_LEFT:
-            if (ed.cx > 0) ed.cx--;
-            else if (ed.cy > 0) { ed.cy--; ed.cx = ed.lines[ed.cy].size(); }
-            break;
-        case KEY_RIGHT:
-            if (ed.cx < (int)line_len) ed.cx++;
-            else if (ed.cy < (int)ed.lines.size()-1) { ed.cy++; ed.cx = 0; }
-            break;
+    case KEY_UP:
+        if (ed.cy > 0) {
+            ed.cy--;
+        } else if (actual_row > 0) {
+            // 到达缓存区顶端，向上移动片段
+            ensure_cache(ed, actual_row - 1);
+            ed.cy = 0;
+        }
+        break;
+    case KEY_DOWN:
+        if (ed.cy < (int)ed.cache_lines.size() - 1 && actual_row + 1 < ed.total_lines) {
+            ed.cy++;
+        } else if (actual_row + 1 < ed.total_lines) {
+            // 到达缓存区底端，向下移动片段
+            ensure_cache(ed, actual_row + 1);
+            ed.cy = min((int)ed.cache_lines.size() - 1, ed.cy);
+        }
+        break;
+    case KEY_LEFT:
+        if (ed.cx > 0) {
+            ed.cx--;
+        } else if (ed.cy > 0) {
+            ed.cy--;
+            ed.cx = ed.cache_lines[ed.cy].size();
+        } else if (actual_row > 0) {
+            // 顶行再左，加载上一片段
+            ensure_cache(ed, actual_row - 1);
+            ed.cy = 0;
+            ed.cx = ed.cache_lines[ed.cy].size();
+        }
+        break;
+    case KEY_RIGHT:
+        if (ed.cx < (int)ed.cache_lines[ed.cy].size()) {
+            ed.cx++;
+        } else if (ed.cy < (int)ed.cache_lines.size() - 1 && actual_row + 1 < ed.total_lines) {
+            ed.cy++;
+            ed.cx = 0;
+        } else if (actual_row + 1 < ed.total_lines) {
+            // 底行再右，加载下一片段
+            ensure_cache(ed, actual_row + 1);
+            ed.cy = min((int)ed.cache_lines.size() - 1, ed.cy + 1);
+            ed.cx = 0;
+        }
+        break;
     }
-    ed.cx = min(ed.cx, (int)ed.lines[ed.cy].size());
+
+    // 保证 cx 不越界
+    ed.cx = min(ed.cx, (int)ed.cache_lines[ed.cy].size());
+
+    // 屏幕滚动行偏移
     if (ed.cy < ed.rowoff) ed.rowoff = ed.cy;
-    int screen_rows = rows-3;
-    if (ed.cy >= ed.rowoff + screen_rows) ed.rowoff = ed.cy - (screen_rows-1);
+    if (ed.cy >= ed.rowoff + screen_rows) ed.rowoff = ed.cy - (screen_rows - 1);
 }
 
 void insert_char(EditorState &ed, int c) {
-    ed.lines[ed.cy].insert(ed.cx, 1, c);
+    ed.cache_lines[ed.cy].insert(ed.cx, 1, c);
     ed.cx++;
     ed.dirty = true;
 }
 
 void del_char(EditorState &ed) {
     if (ed.cx == 0 && ed.cy > 0) {
-        ed.cx = ed.lines[ed.cy-1].size();
-        ed.lines[ed.cy];
-        ed.lines.erase(ed.lines.begin() + ed.cy);
+        ed.cx = ed.cache_lines[ed.cy-1].size();
+        ed.cache_lines[ed.cy];
+        ed.cache_lines.erase(ed.cache_lines.begin() + ed.cy);
         ed.cy--;
         ed.dirty = true;
     } else if (ed.cx > 0) {
-        ed.lines[ed.cy].erase(ed.cx-1, 1);
+        ed.cache_lines[ed.cy].erase(ed.cx-1, 1);
         ed.cx--;
         ed.dirty = true;
     }
 }
 
 void insert_newline(EditorState &ed) {
-    ed.lines.insert(ed.lines.begin() + ed.cy + 1, ed.lines[ed.cy].substr(ed.cx));
-    ed.lines[ed.cy] = ed.lines[ed.cy].substr(0, ed.cx);
+    ed.cache_lines.insert(ed.cache_lines.begin() + ed.cy + 1, ed.cache_lines[ed.cy].substr(ed.cx));
+    ed.cache_lines[ed.cy] = ed.cache_lines[ed.cy].substr(0, ed.cx);
     ed.cy++;
     ed.cx = 0;
     ed.dirty = true;
@@ -304,8 +399,8 @@ void do_search(EditorState& ed, const string& word) {
     ed.search_results.clear();
     ed.search_idx = 0;
     if (word.empty()) return;
-    for (int i = 0; i < (int)ed.lines.size(); ++i) {
-        string& line = ed.lines[i];
+    for (int i = 0; i < (int)ed.cache_lines.size(); ++i) {
+        string& line = ed.cache_lines[i];
         size_t pos = 0;
         while ((pos = line.find(word, pos)) != string::npos) {
             ed.search_results.push_back({i, (int)pos});
@@ -371,9 +466,9 @@ void editor_loop(EditorState &ed) {
                     if (ed.cy > 0) ed.cy--;
                 }
                 if (event.bstate & BUTTON5_PRESSED) {
-                    if (ed.cy < (int)ed.lines.size() - 1) ed.cy++;
+                    if (ed.cy < (int)ed.cache_lines.size() - 1) ed.cy++;
                 }
-                ed.cx = min(ed.cx, (int)ed.lines[ed.cy].size());
+                ed.cx = min(ed.cx, (int)ed.cache_lines[ed.cy].size());
                 if (ed.cy < ed.rowoff) ed.rowoff = ed.cy;
                 int screen_rows = rows-3;
                 if (ed.cy >= ed.rowoff + screen_rows) ed.rowoff = ed.cy - (screen_rows-1);
