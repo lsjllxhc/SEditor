@@ -58,6 +58,7 @@ int total_lines = 0;         // 文件总行数
 vector<bool> dirty_flags;    // 缓存区每行是否被修改
     string filename, statusmsg;
     std::mutex file_mutex;
+    std::vector<std::streampos> line_offsets;
     std::atomic<bool> loading{false};
     std::atomic<bool> stop_loading{false};
     int loading_target_row = 0;
@@ -85,6 +86,35 @@ string get_ext(const string& filename) {
     size_t pos = filename.find_last_of('.');
     if (pos == string::npos) return "";
     return filename.substr(pos + 1);
+}
+
+// 缓存窗口大小（可自行调整）
+#define CACHE_SIZE 100
+
+void load_cache(EditorState &ed, int target_row) {
+    if (ed.line_offsets.empty() || ed.filename.empty()) return;
+    int start = std::max(0, target_row - CACHE_SIZE / 2);
+    int end = std::min(ed.total_lines, start + CACHE_SIZE);
+
+    std::ifstream fin(ed.filename);
+    if (!fin) {
+        WriteLog(LogLevel::ERROR, "load_cache: failed to open file " + ed.filename);
+        return;
+    }
+
+    ed.cache_lines.clear();
+    ed.dirty_flags.clear();
+
+    for (int i = start; i < end; ++i) {
+        fin.clear(); // 清除状态
+        fin.seekg(ed.line_offsets[i]);
+        std::string s;
+        if (!std::getline(fin, s)) break;
+        ed.cache_lines.push_back(s);
+        ed.dirty_flags.push_back(false);
+    }
+    ed.file_rowoff = start; // 当前缓存窗口的起始行号
+    WriteLog(LogLevel::DEBUG, "load_cache: from line " + std::to_string(start) + " to " + std::to_string(end));
 }
 
 void draw_code_row(const string& line, int y, const string& ext, EditorState &ed, int filerow) {
@@ -310,40 +340,51 @@ void set_status(EditorState &ed, const string &msg) {
     ed.statusmsg = msg;
 }
 
-void open_file(EditorState &ed, const string &fname) {
+void open_file(EditorState &ed, const std::string &fname) {
     ed.filename = fname;
     ed.cache_lines.clear();
     ed.dirty_flags.clear();
-    ifstream fin(fname);
+    ed.line_offsets.clear();
     ed.file_rowoff = 0;
     ed.total_lines = 0;
 
+    std::ifstream fin(fname);
     if (!fin) {
         WriteLog(LogLevel::INFO, "Try open file (new): " + fname);
         ed.cache_lines.push_back("");
         ed.dirty_flags.push_back(false);
         ed.newfile = true;
-        set_status(ed, fname + " (new file) ");
         ed.total_lines = 1;
-        WriteLog(LogLevel::WARNING, "File not found, treat as new file: " + fname);
-    } else {
-        WriteLog(LogLevel::INFO, "Open file: " + fname + " success");
-        string s;
-        int cnt = 0;
-        while (getline(fin, s)) {
-            ed.cache_lines.push_back(s);
-            ed.dirty_flags.push_back(false);
-            cnt++;
-        }
-        ed.newfile = false;
-        set_status(ed, fname);
-        ed.total_lines = cnt;
-        WriteLog(LogLevel::DEBUG, "File loaded: " + fname + ", lines=" + to_string(cnt));
+        set_status(ed, fname + " (new file) ");
+        return;
     }
 
+    // 预处理，记录每行在文件中的偏移量
+    std::string s;
+    while (fin) {
+        ed.line_offsets.push_back(fin.tellg());
+        if (!std::getline(fin, s)) break;
+        ed.total_lines++;
+    }
+
+    fin.clear();
+    fin.seekg(0);
+
+    // 初始只加载前 CACHE_SIZE 行
+    int cnt = 0;
+    ed.cache_lines.clear();
+    ed.dirty_flags.clear();
+    while (cnt < CACHE_SIZE && std::getline(fin, s)) {
+        ed.cache_lines.push_back(s);
+        ed.dirty_flags.push_back(false);
+        cnt++;
+    }
+    ed.file_rowoff = 0;
+    ed.newfile = false;
     ed.dirty = false;
     ed.cx = ed.cy = ed.rowoff = 0;
-    WriteLog(LogLevel::INFO, "open_file finished: " + fname);
+    set_status(ed, fname);
+    WriteLog(LogLevel::INFO, "open_file finished: " + fname + ", total_lines=" + std::to_string(ed.total_lines));
 }
 
 void save_file(EditorState &ed, const string &fname) {
@@ -378,73 +419,63 @@ void save_file(EditorState &ed, const string &fname) {
     set_status(ed, "Wrote " + to_string(all_lines.size()) + " lines");
 }
 
-void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
-    int screen_rows = rows - 3;
-
-    // 计算实际文件行号
-    int actual_row = ed.file_rowoff + ed.cy;
+// key 可以用自定义的枚举或常量，如 ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT
+void editor_move_cursor(EditorState &ed, int key, int screen_rows, int screen_cols) {
+    int filerow = ed.file_rowoff + ed.cy;
+    int filecol = ed.cx;
 
     switch (key) {
-    case KEY_UP:
-        if (ed.cy > 0) {
-            ed.cy--;
-        } else if (actual_row > 0) {
-            // 到达缓存区顶端，向上移动片段
-            if (!ed.loading) {
-    async_load_cache(ed, actual_row - 1);
-}
-            ed.cy = 0;
-        }
-        break;
-    case KEY_DOWN:
-        if (ed.cy < (int)ed.cache_lines.size() - 1 && actual_row + 1 < ed.total_lines) {
-            ed.cy++;
-        } else if (actual_row + 1 < ed.total_lines) {
-            // 到达缓存区底端，向下移动片段
-            if (!ed.loading) {
-    async_load_cache(ed, actual_row + 1);
-}
-            ed.cy = min((int)ed.cache_lines.size() - 1, ed.cy);
-        }
-        break;
-    case KEY_LEFT:
-        if (ed.cx > 0) {
-            ed.cx--;
-        } else if (ed.cy > 0) {
-            ed.cy--;
-            ed.cx = ed.cache_lines[ed.cy].size();
-        } else if (actual_row > 0) {
-            // 顶行再左，加载上一片段
-            if (!ed.loading) {
-    async_load_cache(ed, actual_row - 1);
-}
-            ed.cy = 0;
-            ed.cx = ed.cache_lines[ed.cy].size();
-        }
-        break;
-    case KEY_RIGHT:
-        if (ed.cx < (int)ed.cache_lines[ed.cy].size()) {
-            ed.cx++;
-        } else if (ed.cy < (int)ed.cache_lines.size() - 1 && actual_row + 1 < ed.total_lines) {
-            ed.cy++;
-            ed.cx = 0;
-        } else if (actual_row + 1 < ed.total_lines) {
-            // 底行再右，加载下一片段
-            if (!ed.loading) {
-    async_load_cache(ed, actual_row + 1);
-}
-            ed.cy = min((int)ed.cache_lines.size() - 1, ed.cy + 1);
-            ed.cx = 0;
-        }
-        break;
+        case ARROW_LEFT:
+            if (filecol > 0) {
+                ed.cx--;
+            } else if (filerow > 0) {
+                filerow--;
+                ed.cx = ed.cache_lines[filerow - ed.file_rowoff].size();
+                ed.cy--;
+            }
+            break;
+        case ARROW_RIGHT:
+            if (filerow - ed.file_rowoff < (int)ed.cache_lines.size() &&
+                ed.cx < (int)ed.cache_lines[filerow - ed.file_rowoff].size()) {
+                ed.cx++;
+            } else if (filerow + 1 < ed.total_lines) {
+                filerow++;
+                ed.cx = 0;
+                ed.cy++;
+            }
+            break;
+        case ARROW_UP:
+            if (filerow > 0) {
+                filerow--;
+                ed.cy--;
+            }
+            break;
+        case ARROW_DOWN:
+            if (filerow + 1 < ed.total_lines) {
+                filerow++;
+                ed.cy++;
+            }
+            break;
     }
 
-    // 保证 cx 不越界
-    ed.cx = min(ed.cx, (int)ed.cache_lines[ed.cy].size());
+    // 保证光标不会越过当前缓存区
+    if (ed.cy < 0) ed.cy = 0;
+    if (ed.cy >= (int)ed.cache_lines.size()) ed.cy = ed.cache_lines.size() - 1;
 
-    // 屏幕滚动行偏移
-    if (ed.cy < ed.rowoff) ed.rowoff = ed.cy;
-    if (ed.cy >= ed.rowoff + screen_rows) ed.rowoff = ed.cy - (screen_rows - 1);
+    // 如果光标超出当前缓存区，则重载缓存
+    filerow = ed.file_rowoff + ed.cy;
+    if (filerow < ed.file_rowoff || filerow >= ed.file_rowoff + (int)ed.cache_lines.size()) {
+        load_cache(ed, filerow);
+        ed.cy = filerow - ed.file_rowoff;
+    }
+
+    // 修正光标列到当前行可用范围
+    int rowlen = 0;
+    if (ed.cy < (int)ed.cache_lines.size())
+        rowlen = ed.cache_lines[ed.cy].size();
+
+    if (ed.cx > rowlen) ed.cx = rowlen;
+    if (ed.cx < 0) ed.cx = 0;
 }
 
 void insert_char(EditorState &ed, int c) {
