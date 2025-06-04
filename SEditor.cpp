@@ -245,7 +245,10 @@ void open_file(EditorState &ed, const string &fname) {
         int cnt = 0;
         while (getline(fin, s)) {
             if (cnt < CACHE_SIZE) {
-                ed.cache.push_back(false);
+                ed.cache_lines.push_back(s);
+                ed.dirty_flags.push_back(false);
+            }
+            cnt++;
         }
         ed.newfile = false;
         set_status(ed, fname);
