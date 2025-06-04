@@ -196,8 +196,16 @@ void async_load_cache(EditorState& ed, int target_row) {
     ed.loading = true;
     ed.stop_loading = false;
     ed.loading_target_row = target_row;
+
+    WriteLog(LogLevel::DEBUG, "Begin async_load_cache at row " + std::to_string(target_row) + " for file: " + ed.filename);
+
     std::thread([&ed, target_row]() {
         std::ifstream fin(ed.filename);
+        if (!fin) {
+            WriteLog(LogLevel::ERROR, "async_load_cache failed to open file: " + ed.filename);
+            ed.loading = false;
+            return;
+        }
         std::string s;
         int cur = 0;
         int start = std::max(target_row - CACHE_SIZE/2, 0);
@@ -210,7 +218,10 @@ void async_load_cache(EditorState& ed, int target_row) {
             }
             cur++;
             if ((int)new_lines.size() >= CACHE_SIZE) break;
-            if (ed.stop_loading) break;
+            if (ed.stop_loading) {
+                WriteLog(LogLevel::WARNING, "async_load_cache interrupted for file: " + ed.filename);
+                break;
+            }
         }
         {
             std::lock_guard<std::mutex> lk(ed.file_mutex);
@@ -218,7 +229,7 @@ void async_load_cache(EditorState& ed, int target_row) {
             ed.dirty_flags = new_dirty;
             ed.file_rowoff = start;
         }
-        std::cerr << "Loading finished, loaded lines=" << new_lines.size() << std::endl;
+        WriteLog(LogLevel::DEBUG, "async_load_cache finished for file: " + ed.filename + ", loaded lines: " + std::to_string(new_lines.size()));
         ed.loading = false;
     }).detach();
 }
@@ -308,12 +319,15 @@ void open_file(EditorState &ed, const string &fname) {
     ed.total_lines = 0;
 
     if (!fin) {
+        WriteLog(LogLevel::INFO, "Try open file (new): " + fname);
         ed.cache_lines.push_back("");
         ed.dirty_flags.push_back(false);
         ed.newfile = true;
         set_status(ed, fname + " (new file) ");
         ed.total_lines = 1;
+        WriteLog(LogLevel::WARNING, "File not found, treat as new file: " + fname);
     } else {
+        WriteLog(LogLevel::INFO, "Open file: " + fname + " success");
         string s;
         int cnt = 0;
         while (getline(fin, s)) {
@@ -326,10 +340,12 @@ void open_file(EditorState &ed, const string &fname) {
         ed.newfile = false;
         set_status(ed, fname);
         ed.total_lines = cnt;
+        WriteLog(LogLevel::DEBUG, "File loaded: " + fname + ", lines=" + to_string(cnt));
     }
 
     ed.dirty = false;
     ed.cx = ed.cy = ed.rowoff = 0;
+    WriteLog(LogLevel::INFO, "open_file finished: " + fname);
 }
 
 void save_file(EditorState &ed, const string &fname) {
