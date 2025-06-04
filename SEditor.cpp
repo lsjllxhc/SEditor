@@ -441,6 +441,7 @@ void editor_loop(EditorState &ed) {
             insert_char(ed, c);
         }
     }
+}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
