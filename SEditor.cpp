@@ -16,6 +16,10 @@
 #include <mutex>
 #include <iostream>
 #include <string>
+#define ARROW_LEFT  1000
+#define ARROW_RIGHT 1001
+#define ARROW_UP    1002
+#define ARROW_DOWN  1003
 enum class LogLevel { DEBUG, INFO, WARNING, ERROR };
 void WriteLog(LogLevel level, const std::string& msg) {
     switch(level) {
@@ -27,19 +31,7 @@ void WriteLog(LogLevel level, const std::string& msg) {
     std::cerr << msg << std::endl;
 }
 
-#define ARROW_LEFT  1000
-#define ARROW_RIGHT 1001
-#define ARROW_UP    1002
-#define ARROW_DOWN  1003
-
 std::mutex logMutex;
-
-enum class LogLevel {
-    INFO,
-    WARNING,
-    ERROR,
-    DEBUG
-};
 
 using namespace std;
 
@@ -216,24 +208,6 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
         }
         // 其它
         mvaddch(y, x++, line[i++]);
-    }
-}
-
-void WriteLog(LogLevel level, const std::string& message) {
-    std::lock_guard<std::mutex> guard(logMutex);
-    std::ofstream logfile("file.log", std::ios::app);
-    if (logfile.is_open()) {
-        std::time_t now = std::time(nullptr);
-        char buf[32];
-        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
-        std::string levelStr;
-        switch (level) {
-            case LogLevel::INFO: levelStr = "INFO"; break;
-            case LogLevel::WARNING: levelStr = "WARNING"; break;
-            case LogLevel::ERROR: levelStr = "ERROR"; break;
-            case LogLevel::DEBUG: levelStr = "DEBUG"; break;
-        }
-        logfile << "[" << buf << "][" << levelStr << "] " << message << std::endl;
     }
 }
 
