@@ -9,6 +9,7 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <iostream>
 
 using namespace std;
 
@@ -186,16 +187,9 @@ void async_load_cache(EditorState& ed, int target_row) {
             ed.dirty_flags = new_dirty;
             ed.file_rowoff = start;
         }
+        std::cerr << "Loading finished, loaded lines=" << new_lines.size() << std::endl;
         ed.loading = false;
     }).detach();
-    {
-    std::lock_guard> lk(ed.file_mutex);
-    ed.cache_lines = new_lines;
-    ed.dirty_flags = new_dirty;
-    ed.file_rowoff = start;
-}
-std::cerr << "Loading finished, loaded lines=" << new_lines.size() << std::endl;
-ed.loading = false;
 }
 
 void ensure_cache(EditorState& ed, int target_row) {
