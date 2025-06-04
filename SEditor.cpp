@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <ctime>
 #include <cctype>
+#include <thread>
+#include <atomic>
+#include <mutex>
 
 using namespace std;
 
@@ -40,6 +43,10 @@ int file_rowoff = 0;         // 当前缓存内容在文件中的起始行号
 int total_lines = 0;         // 文件总行数
 vector<bool> dirty_flags;    // 缓存区每行是否被修改
     string filename, statusmsg;
+    std::mutex file_mutex;
+    std::atomic<bool> loading{false};
+    std::atomic<bool> stop_loading{false};
+    int loading_target_row = 0;
     int cx = 0, cy = 0;
     int rowoff = 0;
     bool dirty = false;
@@ -151,6 +158,38 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
     }
 }
 
+void async_load_cache(EditorState& ed, int target_row) {
+    // 防止多重加载
+    if (ed.loading) return;
+    ed.loading = true;
+    ed.stop_loading = false;
+    ed.loading_target_row = target_row;
+    std::thread([&ed, target_row]() {
+        std::ifstream fin(ed.filename);
+        std::string s;
+        int cur = 0;
+        int start = std::max(target_row - CACHE_SIZE/2, 0);
+        std::vector<std::string> new_lines;
+        std::vector<bool> new_dirty;
+        while (std::getline(fin, s)) {
+            if (cur >= start && (int)new_lines.size() < CACHE_SIZE) {
+                new_lines.push_back(s);
+                new_dirty.push_back(false);
+            }
+            cur++;
+            if ((int)new_lines.size() >= CACHE_SIZE) break;
+            if (ed.stop_loading) break;
+        }
+        {
+            std::lock_guard<std::mutex> lk(ed.file_mutex);
+            ed.cache_lines = new_lines;
+            ed.dirty_flags = new_dirty;
+            ed.file_rowoff = start;
+        }
+        ed.loading = false;
+    }).detach();
+}
+
 void ensure_cache(EditorState& ed, int target_row) {
     if (target_row < ed.file_rowoff || target_row >= ed.file_rowoff + (int)ed.cache_lines.size()) {
         // 需要重新加载缓存
@@ -173,6 +212,7 @@ void ensure_cache(EditorState& ed, int target_row) {
 }
 
 void draw_rows(EditorState &ed, int rows, int cols) {
+    std::lock_guard<std::mutex> lk(ed.file_mutex);
     string ext = get_ext(ed.filename);
     bool color = is_code_file(ed.filename);
     for (int y = 0; y < rows-3; ++y) {
@@ -303,7 +343,9 @@ void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
             ed.cy--;
         } else if (actual_row > 0) {
             // 到达缓存区顶端，向上移动片段
-            ensure_cache(ed, actual_row - 1);
+            if (!ed.loading) {
+    async_load_cache(ed, actual_row - 1);
+}
             ed.cy = 0;
         }
         break;
@@ -312,7 +354,9 @@ void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
             ed.cy++;
         } else if (actual_row + 1 < ed.total_lines) {
             // 到达缓存区底端，向下移动片段
-            ensure_cache(ed, actual_row + 1);
+            if (!ed.loading) {
+    async_load_cache(ed, actual_row + 1);
+}
             ed.cy = min((int)ed.cache_lines.size() - 1, ed.cy);
         }
         break;
@@ -324,7 +368,9 @@ void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
             ed.cx = ed.cache_lines[ed.cy].size();
         } else if (actual_row > 0) {
             // 顶行再左，加载上一片段
-            ensure_cache(ed, actual_row - 1);
+            if (!ed.loading) {
+    async_load_cache(ed, actual_row - 1);
+}
             ed.cy = 0;
             ed.cx = ed.cache_lines[ed.cy].size();
         }
@@ -337,7 +383,9 @@ void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
             ed.cx = 0;
         } else if (actual_row + 1 < ed.total_lines) {
             // 底行再右，加载下一片段
-            ensure_cache(ed, actual_row + 1);
+            if (!ed.loading) {
+    async_load_cache(ed, actual_row + 1);
+}
             ed.cy = min((int)ed.cache_lines.size() - 1, ed.cy + 1);
             ed.cx = 0;
         }
