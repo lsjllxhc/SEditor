@@ -204,16 +204,19 @@ void open_file(EditorState &ed, const string &fname) {
     ed.filename = fname;
     ed.lines.clear();
     ifstream fin(fname);
+
     if (!fin) {
         ed.lines.push_back("");
         ed.newfile = true;
         set_status(ed, fname + " (new file) ");
-        std::string s;
+    } else {
+        string s;
         while (getline(fin, s)) ed.lines.push_back(s);
-        if (ed.lines.empty()) ed.lines.push_back("");
+        if (ed.lines.empty()) ed.lines.push_back(""); // 文件为空也插入一行
         ed.newfile = false;
         set_status(ed, fname);
     }
+
     ed.dirty = false;
     ed.cx = ed.cy = ed.rowoff = 0;
 }
