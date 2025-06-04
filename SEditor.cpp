@@ -35,7 +35,7 @@ const set<string> java_keywords = {
 };
 const set<string> json_keywords = {"true","false","null"};
 
-const int CACHE_SIZE = 500;  // 缓存窗口大小，可调整
+const int CACHE_SIZE = 100;  // 缓存窗口大小，可调整
 
 struct EditorState {
     vector<string> cache_lines;   // 缓存当前窗口附近的若干行
@@ -188,6 +188,14 @@ void async_load_cache(EditorState& ed, int target_row) {
         }
         ed.loading = false;
     }).detach();
+    {
+    std::lock_guard> lk(ed.file_mutex);
+    ed.cache_lines = new_lines;
+    ed.dirty_flags = new_dirty;
+    ed.file_rowoff = start;
+}
+std::cerr << "Loading finished, loaded lines=" << new_lines.size() << std::endl;
+ed.loading = false;
 }
 
 void ensure_cache(EditorState& ed, int target_row) {
@@ -499,6 +507,13 @@ void editor_loop(EditorState &ed) {
     mousemask(ALL_MOUSE_EVENTS | REPORT_MOUSE_POSITION, NULL);
     MEVENT event;
     while (1) {
+        if (ed.loading) {
+            clear();
+            mvprintw(1, 2, "Loading, please wait...");
+            refresh();
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
         if (ed.search_flash && ((clock() - ed.last_search_time) > (CLOCKS_PER_SEC))) {
             ed.search_flash = false;
         }
