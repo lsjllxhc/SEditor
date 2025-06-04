@@ -14,6 +14,23 @@
 #include <string>
 #include <ctime>
 #include <mutex>
+#include <iostream>
+#include <string>
+enum class LogLevel { DEBUG, INFO, WARNING, ERROR };
+void WriteLog(LogLevel level, const std::string& msg) {
+    switch(level) {
+        case LogLevel::DEBUG: std::cerr << "[DEBUG] "; break;
+        case LogLevel::INFO: std::cerr << "[INFO] "; break;
+        case LogLevel::WARNING: std::cerr << "[WARNING] "; break;
+        case LogLevel::ERROR: std::cerr << "[ERROR] "; break;
+    }
+    std::cerr << msg << std::endl;
+}
+
+#define ARROW_LEFT  1000
+#define ARROW_RIGHT 1001
+#define ARROW_UP    1002
+#define ARROW_DOWN  1003
 
 std::mutex logMutex;
 
