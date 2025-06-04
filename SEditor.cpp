@@ -175,7 +175,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
 void WriteLog(LogLevel level, const std::string& message) {
     std::lock_guard<std::mutex> guard(logMutex);
     std::ofstream logfile("file.log", std::ios::app);
-    if()) {
+    if (logfile.is_open()) {
         std::time_t now = std::time(nullptr);
         char buf[32];
         std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
@@ -599,85 +599,4 @@ void editor_loop(EditorState &ed) {
     } else if (!word.empty()) {
         do_search(ed, word);
         if (!ed.search_results.empty()) {
-            ed.search_idx = 0;
-            goto_search(ed, rows);
-        } else {
-            set_status(ed, "Not found");
-        }
-    }
-    continue;
-}
-        else if (c == 24) { // ^X
-    if (ed.dirty) {
-        set_status(ed, "File modified. Save? (Enter=Yes, ^X=No, ^C=Cancel)");
-        draw_status(ed, rows, cols);
-        draw_msg(ed, rows, cols);
-        int ch = getch();
-        if (ch == '\n' || ch == '\r') { // Enter保存
-            string fname = prompt(ed, "File Name", ed.filename);
-            save_file(ed, fname);
-            break;
-        } else if (ch == 24) { // ^X强制退出
-            break;
-        } else if (ch == 3) { // ^C取消
-            set_status(ed, "Cancel");
-            continue;
-        } else {
-            set_status(ed, "Cancel");
-            continue;
-        }
-    } else {
-        break; // 没有修改直接退出
-    }
-}
-        else if (c == 15) { // ^O
-    if (!ed.filename.empty()) {
-        save_file(ed, ed.filename);
-    }
-}
-        else if (c == KEY_UP || c == KEY_DOWN || c == KEY_LEFT || c == KEY_RIGHT) {
-            editor_move_cursor(ed, c, rows, cols);
-        }
-        else if (c == KEY_BACKSPACE || c == 127 || c == 8) {
-            del_char(ed);
-        }
-        else if (c == '\n') {
-            insert_newline(ed);
-        }
-        else if (c == 3) { // ^C
-            set_status(ed, "Cancel");
-        }
-        else if (isprint(c)) {
-            insert_char(ed, c);
-        }
-    }
-}
-
-int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        printf("Usage: %s filename\n", argv[0]);
-        return 1;
-    }
-    EditorState ed;
-    initscr();
-    raw();
-    keypad(stdscr, TRUE);
-    noecho();
-    curs_set(1);
-
-    if (has_colors()) {
-        start_color();
-        use_default_colors();
-        init_pair(1, COLOR_BLUE, -1);   // 关键字
-        init_pair(2, COLOR_GREEN, -1);  // 字符串
-        init_pair(3, COLOR_CYAN, -1);   // 注释
-        init_pair(4, COLOR_MAGENTA, -1);// 数字
-        init_pair(5, COLOR_YELLOW, -1); // 搜索高亮
-    }
-
-    open_file(ed, argv[1]);
-    editor_loop(ed);
-
-    endwin();
-    return 0;
-}
+            e
