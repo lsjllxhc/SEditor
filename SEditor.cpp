@@ -294,7 +294,7 @@ void goto_search(EditorState &screen_rows-1);
 void draw_help(int rows, int cols) {
     clear();
     int y = 1;
-    mvprintw(y++, 2, "Nano Like Editor Help");
+    mvprintw(y++, 2, "SEditor Help");
     y++;
     mvprintw(y++, 2, "^O Save    ^X Exit    ^C Cancel    ^F Find");
     mvprintw(y++, 2, "^G Help    Arrows Move    Mouse Wheel Scroll");
