@@ -9,7 +9,7 @@
 
 using namespace std;
 
-// Keyword sets
+// 关键词集合
 const set<string> cpp_keywords = {
     "int","for","if","else","while","return","switch","case","break","const","void","class",
     "public","private","protected","struct","new","delete","virtual","override","static","using",
@@ -35,11 +35,11 @@ const set<string> json_keywords = {"true","false","null"};
 struct EditorState {
     vector<string> lines;
     string filename, statusmsg;
-    int cx = 0, cy = 0; // cursor x/y in buffer
-    int rowoff = 0;     // vertical scroll offset
+    int cx = 0, cy = 0;
+    int rowoff = 0;
     bool dirty = false;
     bool newfile = false;
-    // Search
+    // 搜索相关
     string search_word = "";
     vector<pair<int, int>> search_results;
     int search_idx = 0;
@@ -72,8 +72,9 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
 
     int highlight_start = -1, highlight_len = 0;
     if (ed.search_flash && !ed.search_word.empty()) {
-        if (!ed.search_results.empty() && ed.search_idx < ed.search_results.size()) {
-            auto [sy, sx] = ed.search_results[ed.search_idx];
+        if (!ed.search_results.empty() && ed.search_idx < (int)ed.search_results.size()) {
+            int sy = ed.search_results[ed.search_idx].first;
+            int sx = ed.search_results[ed.search_idx].second;
             if (sy == filerow) {
                 highlight_start = sx;
                 highlight_len = ed.search_word.size();
@@ -82,7 +83,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
     }
 
     for (size_t i = 0; i < line.size();) {
-        // Search highlight
+        // 搜索高亮
         if (highlight_start == x) {
             attron(COLOR_PAIR(5) | A_STANDOUT);
             for (int k = 0; k < highlight_len && i < line.size(); ++k, ++i, ++x)
@@ -90,7 +91,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
             attroff(COLOR_PAIR(5) | A_STANDOUT);
             continue;
         }
-        // Comments
+        // 注释高亮
         if ((ext == "cpp" || ext == "java" || ext == "js") && line[i] == '/' && i+1 < line.size() && line[i+1] == '/') {
             attron(COLOR_PAIR(3));
             mvprintw(y, x, "%s", line.substr(i).c_str());
@@ -99,11 +100,11 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
         }
         if (ext == "py" && line[i] == '#') {
             attron(COLOR_PAIR(3));
-            mvprintw(y, x, "%s", line.substr(i).c_str());
+            mvprintw(y, x(i).c_str());
             attroff(COLOR_PAIR(3));
             break;
         }
-        // Strings
+        // 字符串高亮
         if (line[i] == '"' || line[i] == '\'') {
             int quote = line[i];
             attron(COLOR_PAIR(2));
@@ -115,7 +116,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
             attroff(COLOR_PAIR(2));
             continue;
         }
-        // Keywords
+        // 关键字高亮
         if (keywords && (isalpha(line[i]) || line[i] == '_')) {
             string word;
             size_t start = i;
@@ -130,7 +131,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
             x += word.size();
             continue;
         }
-        // Numbers
+        // 数字高亮
         if (isdigit(line[i])) {
             size_t start = i;
             while (i < line.size() && isdigit(line[i])) ++i;
@@ -140,7 +141,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
             x += i - start;
             continue;
         }
-        // Other
+        // 其它
         mvaddch(y, x++, line[i++]);
     }
 }
@@ -152,14 +153,23 @@ void draw_rows(EditorState &ed, int rows, int cols) {
         int filerow = y + ed.rowoff;
         move(y, 0);
         clrtoeol();
-        if (filerow < ed.lines.size()) {
+        if (filerow < (int)ed.lines.size()) {
             if (color)
                 draw_code_row(ed.lines[filerow], y, ext, ed, filerow);
             else {
-                if (ed.search_flash && !ed.search_word.empty() && !ed.search_results.empty() && ed.search_idx < ed.search_results.size()) {
-                    auto [sy, sx] = ed.search_results[ed.search_idx];
+                if (ed.search_results.empty()) {
+                    int sy = ed.search_results[ed.search_idx].first;
+                    int sx = ed.search_results[ed.search_idx].second;
                     if (sy == filerow) {
-                        mvprintw(y, 0, "%.*s", sx 0, "%s", ed.lines[filerow].c_str());
+                        mvprintw(y, 0, "%.*s", sx, ed.lines[filerow].c_str());
+                        attron(COLOR_PAIR(5) | A_STANDOUT);
+                        printw("%.*s", (int)ed.search_word.size(), ed.lines[filerow].c_str() + sx);
+                        attroff(COLOR_PAIR(5) | A_STANDOUT);
+                        printw("%s", ed.lines[filerow].c_str() + sx + ed.search_word.size());
+                        continue;
+                    }
+                }
+                mvprintw(y, 0, "%s", ed.lines[filerow].c_str());
             }
         }
     }
@@ -180,7 +190,10 @@ void draw_msg(EditorState &ed, int rows, int cols) {
     mvprintw(rows-2, 0, "%-*s", cols, ed.statusmsg.c_str());
 }
 
-void draw_shortcuts(int rows attroff(A_REVERSE);
+void draw_shortcuts(int rows, int cols) {
+    attron(A_REVERSE);
+    mvprintw(rows-1, 0, "^O Save  ^X Exit  ^C Cancel  ^F Find  ^G Help");
+    attroff(A_REVERSE);
 }
 
 void set_status(EditorState &ed, const string &msg) {
@@ -194,9 +207,7 @@ void open_file(EditorState &ed, const string &fname) {
     if (!fin) {
         ed.lines.push_back("");
         ed.newfile = true;
-        set_status(ed, fname + " (new file)");
-    } else {
-        string s;
+        set_status(ed, fname + " (new file) ");
         while (getline(fin, s)) ed.lines.push_back(s);
         if (ed.lines.empty()) ed.lines.push_back("");
         ed.newfile = false;
@@ -222,12 +233,15 @@ void editor_move_cursor(EditorState &ed, int key, int rows, int cols) {
             if (ed.cy > 0) ed.cy--;
             break;
         case KEY_DOWN:
-            if (ed.cy < ed.lines.size()-1)ed.cx > 0) ed.cx--;
+            if (ed.cy < (int)ed.lines.size()-1) ed.cy++;
+            break;
+        case KEY_LEFT:
+            if (ed.cx > 0) ed.cx--;
             else if (ed.cy > 0) { ed.cy--; ed.cx = ed.lines[ed.cy].size(); }
             break;
         case KEY_RIGHT:
-            if (ed.cx < line_len) ed.cx++;
-            else if (ed.cy < ed.lines.size()-1) { ed.cy++; ed.cx = 0; }
+            if (ed.cx < (int)line_len) ed.cx++;
+            else if (ed.cy < (int)ed.lines.size()-1) { ed.cy++; ed.cx = 0; }
             break;
     }
     ed.cx = min(ed.cx, (int)ed.lines[ed.cy].size());
@@ -245,7 +259,7 @@ void insert_char(EditorState &ed, int c) {
 void del_char(EditorState &ed) {
     if (ed.cx == 0 && ed.cy > 0) {
         ed.cx = ed.lines[ed.cy-1].size();
-        ed.lines[ed.cy-1] += ed.lines[ed.cy];
+        ed.lines[ed.cy]];
         ed.lines.erase(ed.lines.begin() + ed.cy);
         ed.cy--;
         ed.dirty = true;
@@ -256,19 +270,29 @@ void del_char(EditorState &ed) {
     }
 }
 
-void insert_newline(Editor const string &msg, string def = "") {
+void insert_newline(EditorState &ed) {
+    ed.lines.insert(ed.lines.begin() + ed.cy + 1, ed.lines[ed.cy].substr(ed.cx));
+    ed.lines[ed.cy] = ed.lines[ed.cy].substr(0, ed.cx);
+    ed.cy++;
+    ed.cx = 0;
+    ed.dirty = true;
+}
+
+string prompt(EditorState &ed, const string &msg, string def = "") {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     echo();
     curs_set(1);
-    char buf[256] = {0};
     move(rows-2, 0);
     clrtoeol();
-    printw("% noecho();
+    mvprintw(rows-2, 0, "%s", msg.c_str());
+    char buf[256] = {0};
+    getnstr(buf, 255);
+    noecho();
     curs_set(1);
-    if (ret == ERR) return ""; // ^C etc
     string s = buf;
-    return s.empty() ? def : s;
+    if (s.empty()) return def;
+    return s;
 }
 
 void do_search(EditorState& ed, const string& word) {
@@ -276,7 +300,7 @@ void do_search(EditorState& ed, const string& word) {
     ed.search_results.clear();
     ed.search_idx = 0;
     if (word.empty()) return;
-    for (int i = 0; i < ed.lines.size(); ++i) {
+    for (int i = 0; i < (int)ed.lines.size(); ++i) {
         string& line = ed.lines[i];
         size_t pos = 0;
         while ((pos = line.find(word, pos)) != string::npos) {
@@ -286,9 +310,17 @@ void do_search(EditorState& ed, const string& word) {
     }
 }
 
-void goto_search(EditorState &screen_rows-1);
+void goto_search(EditorState &ed, int rows) {
     ed.search_flash = true;
-    ed.last_search_time = clock();
+    if (ed.last_search_time && ed.search_idx < (int)ed.search_results.size()) {
+        int sy = ed.search_results[ed.search_idx].first;
+        int sx = ed.search_results[ed.search_idx].second;
+        ed.cy = sy;
+        ed.cx = sx;
+        int screen_rows = rows - 3;
+        if (ed.cy < ed.rowoff) ed.rowoff = ed.cy;
+        if (ed.cy >= ed.rowoff + screen_rows) ed.rowoff = ed.cy - (screen_rows-1);
+    }
 }
 
 void draw_help(int rows, int cols) {
@@ -299,7 +331,7 @@ void draw_help(int rows, int cols) {
     mvprintw(y++, 2, "^O Save    ^X Exit    ^C Cancel    ^F Find");
     mvprintw(y++, 2, "^G Help    Arrows Move    Mouse Wheel Scroll");
     mvprintw(y++, 2, "");
-    mvprintw(y++, 2, "Find: Press ^F, enter keyword, Enter for next, ^C to cancel");
+    mvprintw(y++, 2, "Find: Press ^ next, ^C to cancel");
     mvprintw(y++, 2, "Exit: If modified, ^X then Enter to save and exit, ^X to force exit, ^C to cancel");
     mvprintw(y++, 2, "");
     mvprintw(y++, 2, "Syntax highlighting: cpp/py/js/java/json");
@@ -329,11 +361,11 @@ void editor_loop(EditorState &ed) {
         int c = getch();
         if (c == KEY_MOUSE) {
             if (getmouse(&event) == OK) {
-                if (event.bstate & BUTTON4_PRESSED) { // Wheel up
+                if (event.bstate & BUTTON4_PRESSED) {
                     if (ed.cy > 0) ed.cy--;
                 }
-                if (event.bstate & BUTTON5_PRESSED) { // Wheel down
-                    if (ed.cy < ed.lines.size() - 1) ed.cy++;
+                if (event.bstate & BUTTON5_PRESSED) {
+                    if (ed.cy < (int)ed.lines.size() - 1) ed.cy++;
                 }
                 ed.cx = min(ed.cx, (int)ed.lines[ed.cy].size());
                 if (ed.cy < ed.rowoff) ed.rowoff = ed.cy;
@@ -342,11 +374,11 @@ void editor_loop(EditorState &ed) {
             }
             continue;
         }
-        if (c == 7) { // ^G
+        else if (c == 7) { // ^G
             draw_help(rows, cols);
             continue;
         }
-        if (c == 6) { // ^F
+        else if (c == 6) { // ^F
             string prompt_word = ed.search_word.empty() ? "Find" : "Find(" + ed.search_word + ")";
             string word = prompt(ed, prompt_word + ":", ed.search_word);
             if (word.empty() && !ed.search_word.empty()) {
@@ -365,28 +397,28 @@ void editor_loop(EditorState &ed) {
             }
             continue;
         }
-        if (c == 24) { // ^X
+        else if (c == 24) { // ^X
             if (ed.dirty) {
                 set_status(ed, "File modified. Save? (Enter=Yes, ^X=No, ^C=Cancel)");
                 draw_status(ed, rows, cols);
                 draw_msg(ed, rows, cols);
-                draw_shortcuts(rows, cols);
-                refresh();
-                int choice = getch();
-                if (choice == '\n' || choice == '\r') {
-                    string fname = prompt(ed, "File Name", ed.filename);
+                string fname = prompt(ed, "File Name", ed.filename);
                     save_file(ed, fname);
                     break;
-                } else if (choice == 24) {
+                } 
+            else if (choice == 24) {
                     break;
-                } else if (choice == 3) {
+                }
+            else if (choice == 3) {
                     set_status(ed, "Cancel");
                     continue;
-                } else {
+                } 
+            else {
                     set_status(ed, "Cancel");
                     continue;
                 }
-            } else {
+            } 
+            else {
                 break;
             }
         }
@@ -412,7 +444,6 @@ void editor_loop(EditorState &ed) {
             insert_char(ed, c);
         }
     }
-}
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -429,11 +460,11 @@ int main(int argc, char* argv[]) {
     if (has_colors()) {
         start_color();
         use_default_colors();
-        init_pair(1, COLOR_BLUE, -1);   // Keyword
-        init_pair(2, COLOR_GREEN, -1);  // String
-        init_pair(3, COLOR_CYAN, -1);   // Comment
-        init_pair(4, COLOR_MAGENTA, -1);// Number
-        init_pair(5, COLOR_YELLOW, -1); // Search highlight
+        init_pair(1, COLOR_BLUE, -1);   // 关键字
+        init_pair(2, COLOR_GREEN, -1);  // 字符串
+        init_pair(3, COLOR_CYAN, -1);   // 注释
+        init_pair(4, COLOR_MAGENTA, -1);// 数字
+        init_pair(5, COLOR_YELLOW, -1); // 搜索高亮
     }
 
     open_file(ed, argv[1]);
