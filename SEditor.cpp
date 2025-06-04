@@ -100,7 +100,7 @@ void draw_code_row(const string& line, int y, const string& ext, EditorState &ed
         }
         if (ext == "py" && line[i] == '#') {
             attron(COLOR_PAIR(3));
-            mvprintw(y, x(i).c_str());
+            mvprintw(y, x, "%s", line.substr(i).c_str());
             attroff(COLOR_PAIR(3));
             break;
         }
@@ -208,6 +208,7 @@ void open_file(EditorState &ed, const string &fname) {
         ed.lines.push_back("");
         ed.newfile = true;
         set_status(ed, fname + " (new file) ");
+        std::string s;
         while (getline(fin, s)) ed.lines.push_back(s);
         if (ed.lines.empty()) ed.lines.push_back("");
         ed.newfile = false;
@@ -259,7 +260,7 @@ void insert_char(EditorState &ed, int c) {
 void del_char(EditorState &ed) {
     if (ed.cx == 0 && ed.cy > 0) {
         ed.cx = ed.lines[ed.cy-1].size();
-        ed.lines[ed.cy]];
+        ed.lines[ed.cy];
         ed.lines.erase(ed.lines.begin() + ed.cy);
         ed.cy--;
         ed.dirty = true;
@@ -406,10 +407,10 @@ void editor_loop(EditorState &ed) {
                     save_file(ed, fname);
                     break;
                 } 
-            else if (choice == 24) {
+            else if (c == 24) {
                     break;
                 }
-            else if (choice == 3) {
+            else if (c == 3) {
                     set_status(ed, "Cancel");
                     continue;
                 } 
@@ -417,10 +418,6 @@ void editor_loop(EditorState &ed) {
                     set_status(ed, "Cancel");
                     continue;
                 }
-            } 
-            else {
-                break;
-            }
         }
         else if (c == 15) { // ^O
             string fname = prompt(ed, "File Name", ed.filename);
